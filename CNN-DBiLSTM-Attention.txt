@@ -1,0 +1,247 @@
+import matplotlib.pyplot as plt
+from pandas import DataFrame
+from pandas import concat
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+import keras
+import pandas as pd
+import numpy as np
+from math import sqrt
+from sklearn.metrics import r2_score
+from tensorflow.keras.layers import Flatten, LSTM, Bidirectional, Input, Reshape, Conv2D, MaxPooling2D, Dropout, Dense
+import tensorflow as tf
+from third_attention import ThirdAttention
+from keras import optimizers
+from keras.callbacks import EarlyStopping
+
+# 解决中文显示问题，有了这两行代码就可以在画图的时候将中文显示出来
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
+
+# 数据预处理
+def pre(values):
+    # 将所有的数据都转化为浮点数
+    values = values.astype('float32')
+    # 将所有的数据都归一化到0-1之间，方便神经网络的训练和学习
+    values = values.reshape(1574958, 1)
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled = scaler.fit_transform(values)
+    scaled = scaled.reshape(32142, 49)
+    # 将二维矩阵转换为三维矩阵
+    data = np.ones((7,32142,7))
+    data[0,:,:] = scaled[:, 0:7]
+    data[1,:,:] = scaled[:, 7:14]
+    data[2,:,:] = scaled[:, 14:21]
+    data[3,:,:] = scaled[:, 21:28]
+    data[4,:,:] = scaled[:, 28:35]
+    data[5,:,:] = scaled[:, 35:42]
+    data[6,:,:] = scaled[:, 42:]
+    # 转置矩阵
+    data = np.swapaxes(data, 0, 1)
+
+    return data
+
+def pret(values):
+    # 将所有的数据都转化为浮点数
+    values = values.astype('float32')
+    # 将所有的数据都归一化到0-1之间，方便神经网络的训练和学习
+    values = values.reshape(2863560, 1)
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled = scaler.fit_transform(values)
+    scaled = scaled.reshape(58440, 49)
+    # 将二维矩阵转换为三维矩阵
+    data = np.ones((7,58440,7))
+    data[0,:,:] = scaled[:, 0:7]
+    data[1,:,:] = scaled[:, 7:14]
+    data[2,:,:] = scaled[:, 14:21]
+    data[3,:,:] = scaled[:, 21:28]
+    data[4,:,:] = scaled[:, 28:35]
+    data[5,:,:] = scaled[:, 35:42]
+    data[6,:,:] = scaled[:, 42:]
+    # 转置矩阵
+    data = np.swapaxes(data, 0, 1)
+    data = np.swapaxes(data, 1, 2)
+
+    return data
+
+# 数据预处理,不归一化
+def preN(values):
+    # 将所有的数据都转化为浮点数
+    scaled = values.astype('float32')
+    # 将二维矩阵转换为三维矩阵
+    data = np.ones((7,32142,7))
+    data[0,:,:] = scaled[:, 0:7]
+    data[1,:,:] = scaled[:, 7:14]
+    data[2,:,:] = scaled[:, 14:21]
+    data[3,:,:] = scaled[:, 21:28]
+    data[4,:,:] = scaled[:, 28:35]
+    data[5,:,:] = scaled[:, 35:42]
+    data[6,:,:] = scaled[:, 42:]
+    # 转置矩阵
+    data = np.swapaxes(data, 0, 1)
+
+    return data
+
+def pretN(values):
+    # 将所有的数据都转化为浮点数
+    scaled = values.astype('float32')
+    # 将二维矩阵转换为三维矩阵
+    data = np.ones((7,58440,7))
+    data[0,:,:] = scaled[:, 0:7]
+    data[1,:,:] = scaled[:, 7:14]
+    data[2,:,:] = scaled[:, 14:21]
+    data[3,:,:] = scaled[:, 21:28]
+    data[4,:,:] = scaled[:, 28:35]
+    data[5,:,:] = scaled[:, 35:42]
+    data[6,:,:] = scaled[:, 42:]
+    # 转置矩阵
+    data = np.swapaxes(data, 0, 1)
+    data = np.swapaxes(data, 1, 2)
+
+    return data
+
+# 计算mae
+def mae_value(y_true, y_pred):
+    """
+    参数:
+    y_true -- 测试集目标真实值
+    y_pred -- 测试集目标预测值
+
+    返回:
+    mae -- MAE 评价指标
+    """
+
+    n = len(y_true)
+    mae = sum(np.abs(y_true - y_pred)) / n
+    return mae
+
+### train
+## TRMM数据预处理
+# 加载数据集，将数据集中的数据提取出来
+dataset = pd.read_csv('TRMM.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+values = dataset.values
+# TRMM数据预处理
+TRMM_train_X = preN(values)
+
+## gridsat数据预处理
+# 加载数据集，将数据集中的数据提取出来
+dataset = pd.read_csv('gridsat.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+values = dataset.values
+# gridsat数据预处理
+gridsat_train_X = pre(values)
+
+## DEM数据预处理
+# 加载数据集，将数据集中的数据提取出来
+dataset = pd.read_csv('DEM.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+values = dataset.values
+# DEM数据预处理
+DEM_train_X = pre(values)
+
+# 导入实测数据
+dataset = pd.read_csv('pcp.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+train_y = dataset.values
+
+### test
+## TRMM数据预处理
+# 加载数据集，将数据集中的数据提取出来
+dataset = pd.read_csv('TRMM_test.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+values = dataset.values
+# TRMM数据预处理
+TRMM_test_X = pretN(values)
+
+## gridsat数据预处理
+# 加载数据集，将数据集中的数据提取出来
+dataset = pd.read_csv('gridsat_test.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+values = dataset.values
+# gridsat数据预处理
+gridsat_test_X = pret(values)
+
+## DEM数据预处理
+# 加载数据集，将数据集中的数据提取出来
+dataset = pd.read_csv('dem_test.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+values = dataset.values
+# DEM数据预处理
+DEM_test_X = pret(values)
+
+# 导入实测数据
+dataset = pd.read_csv('pcp_test.csv', header=0, index_col=0)
+dataset = dataset.fillna(method='pad')
+test_y= dataset.values
+
+# 输入
+train_x = np.ones((32142,7,7,3))
+test_x = np.ones((58440,7,7,3))
+
+train_x[:,:,:,0] = TRMM_train_X[:, :, :]
+test_x[:,:,:,0] = TRMM_test_X[: , :, :]
+train_x[:,:,:,1] = gridsat_train_X[:, :, :]
+test_x[:,:,:,1] = gridsat_test_X[: , :, :]
+train_x[:,:,:,2] = DEM_train_X[:, :, :]
+test_x[:,:,:,2] = DEM_test_X[: , :, :]
+
+## 搭建神经网络
+model = tf.keras.Sequential()
+
+model.add(Input((7, 7, 3)))
+model.add(Conv2D(filters=128, kernel_size=5, strides=1, padding="valid", activation='relu'))
+model.add(Dropout(0.25))
+model.add(Conv2D(filters=128, kernel_size=2, strides=1, padding="valid", activation='relu'))
+model.add(MaxPooling2D(pool_size=2, strides=1, padding="valid"))
+model.add(Flatten())
+model.add(Dense(1, activation="relu"))
+model.add(Reshape((1, -1)))
+model.add(Bidirectional(LSTM(256, activation='tanh', return_sequences=True)))
+model.add(Bidirectional(LSTM(128, activation='tanh', return_sequences=True)))
+model.add(Bidirectional(LSTM(64, activation='tanh', return_sequences=True)))
+model.add(ThirdAttention(256))
+model.add(Dropout(0.25))
+model.add(Dense(32, activation="relu"))
+model.add(Dense(16, activation="relu"))
+model.add(Dense(1, activation="relu"))
+
+print(model.summary())
+
+epochs=1000
+batch_size=128
+learning_rate = 5e-5
+adam = optimizers.Adam(learning_rate=learning_rate)
+model.compile(loss='mse', optimizer=adam, metrics=['accuracy'])
+#history = model.fit(x=train_x, y=train_y, epochs=epochs, batch_size=batch_size, verbose=1, validation_data=(test_x, test_y))
+#早停
+monitor = EarlyStopping(monitor='val_loss', min_delta=5e-4, patience=200, verbose=1, mode='auto', restore_best_weights = True)# 定义早停
+history = model.fit(x=train_x, y=train_y, callbacks = [monitor], epochs=epochs, batch_size=batch_size, verbose=1, validation_data=(test_x, test_y))
+
+save_path = './model_saved/mode_CLA'
+model.save(save_path)
+
+# 训练完了以后利用训练好的模型作出预测
+yhat = model.predict(test_x)
+prediction = yhat.reshape(test_y.shape)
+real = test_y
+
+# 计算测试误差
+rmse = sqrt(mean_squared_error(real, prediction))
+mape = np.mean(np.abs((real - prediction) / prediction)) * 100
+CC = sqrt(r2_score(real, prediction))
+R2 = r2_score(real, prediction)
+MAE = mae_value(real, prediction)
+print('Test RMSE: %.3f' % rmse)
+print('Test MAPE: %.3f' % mape)
+print('Test CC: %.3f' % CC)
+print('Test R2: %.3f' % R2)
+print('Test MAE: %.3f' % MAE)
+
+# 绘制训练集和测试集的loss值对比图
+plt.figure(dpi=600, figsize=(5, 4))
+plt.plot(history.history['loss'], label='train')
+plt.plot(history.history['val_loss'], label='test')
+plt.title("CNN-DBiLSTM-Attention神经网络loss值")
+plt.legend()
+plt.show()
